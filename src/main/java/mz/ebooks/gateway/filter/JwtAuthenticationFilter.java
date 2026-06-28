@@ -55,7 +55,7 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
 
     /** Path prefixes that are open for any HTTP method (payment redirects). */
     private static final List<String> ANY_METHOD_OPEN_PREFIXES = List.of(
-            "/api/commerce/payments/paypal/capture"
+            "/api/commerce/payments/capture/paypal"
     );
 
     /** Paths that are public only for GET requests. */
