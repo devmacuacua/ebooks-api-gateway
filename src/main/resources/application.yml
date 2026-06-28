@@ -1,0 +1,243 @@
+server:
+  port: ${PORT:8080}
+
+spring:
+  application:
+    name: ebooks-gateway
+  data:
+    redis:
+      url: ${REDIS_URL:redis://localhost:6379}
+  cloud:
+    gateway:
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOrigins:
+              - ${FRONTEND_URL:http://localhost:3000}
+            allowedMethods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
+            allowedHeaders: ["*"]
+            allowCredentials: true
+            maxAge: 3600
+      default-filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 20
+            redis-rate-limiter.burstCapacity: 40
+            redis-rate-limiter.requestedTokens: 1
+        - DedupeResponseHeader=Access-Control-Allow-Credentials Access-Control-Allow-Origin
+      routes:
+        # Auth Service
+        - id: auth-service
+          uri: ${AUTH_SERVICE_URL:http://localhost:8081}
+          predicates:
+            - Path=/api/auth/**
+          filters:
+            - StripPrefix=1
+            - name: CircuitBreaker
+              args:
+                name: auth-cb
+                fallbackUri: forward:/fallback/auth
+
+        # Catalog Service
+        - id: catalog-service
+          uri: ${CATALOG_SERVICE_URL:http://localhost:8082}
+          predicates:
+            - Path=/api/catalog/**
+          filters:
+            - StripPrefix=2
+            - name: CircuitBreaker
+              args:
+                name: catalog-cb
+                fallbackUri: forward:/fallback/catalog
+
+        # Commerce Service
+        - id: commerce-service
+          uri: ${COMMERCE_SERVICE_URL:http://localhost:8083}
+          predicates:
+            - Path=/api/commerce/**
+          filters:
+            - StripPrefix=1
+            - name: CircuitBreaker
+              args:
+                name: commerce-cb
+                fallbackUri: forward:/fallback/commerce
+
+        # Reading/DRM Service
+        - id: reading-service
+          uri: ${READING_SERVICE_URL:http://localhost:3001}
+          predicates:
+            - Path=/api/reading/**
+          filters:
+            - StripPrefix=1
+            - name: CircuitBreaker
+              args:
+                name: reading-cb
+                fallbackUri: forward:/fallback/reading
+
+        # Notification Service
+        - id: notification-service
+          uri: ${NOTIFICATION_SERVICE_URL:http://localhost:3002}
+          predicates:
+            - Path=/api/notifications/**
+          filters:
+            - StripPrefix=1
+
+        # Media Service
+        - id: media-service
+          uri: ${MEDIA_SERVICE_URL:http://localhost:3004}
+          predicates:
+            - Path=/api/media/**
+          filters:
+            - StripPrefix=1
+
+        # Social Service
+        - id: social-service
+          uri: ${SOCIAL_SERVICE_URL:http://localhost:3003}
+          predicates:
+            - Path=/api/social/**
+          filters:
+            - StripPrefix=1
+
+        # Delivery Service
+        - id: delivery-service
+          uri: ${DELIVERY_SERVICE_URL:http://localhost:3006}
+          predicates:
+            - Path=/api/deliveries/**
+          filters:
+            - StripPrefix=1
+
+        # Analytics Service (admin only)
+        - id: analytics-service
+          uri: ${ANALYTICS_SERVICE_URL:http://localhost:3007}
+          predicates:
+            - Path=/api/analytics/**
+          filters:
+            - StripPrefix=1
+
+        # Partner Service (management — requires auth)
+        - id: partner-service
+          uri: ${PARTNER_SERVICE_URL:http://localhost:3005}
+          predicates:
+            - Path=/api/partner/**
+          filters:
+            - StripPrefix=1
+            - name: CircuitBreaker
+              args:
+                name: partner-cb
+                fallbackUri: forward:/fallback/partner
+
+        # User profile / settings (auth-service)
+        - id: user-profile
+          uri: ${AUTH_SERVICE_URL:http://localhost:8081}
+          predicates:
+            - Path=/api/users/**
+          filters:
+            - RewritePath=/api/users(?<seg>.*), /users${seg}
+
+        # Subscriptions (commerce-service)
+        - id: subscriptions
+          uri: ${COMMERCE_SERVICE_URL:http://localhost:8083}
+          predicates:
+            - Path=/api/subscriptions/**
+          filters:
+            - RewritePath=/api/subscriptions(?<seg>.*), /commerce/subscriptions${seg}
+
+        # ── Admin routes ────────────────────────────────────────────────────────
+        # Admin books CRUD (catalog-service) — must precede the generic catalog route
+        - id: admin-books
+          uri: ${CATALOG_SERVICE_URL:http://localhost:8082}
+          predicates:
+            - Path=/api/admin/books/**
+          filters:
+            - RewritePath=/api/admin/books(?<seg>.*), /books${seg}
+
+        # Aggregated stats for admin dashboard
+        - id: admin-stats
+          uri: ${ANALYTICS_SERVICE_URL:http://localhost:3007}
+          predicates:
+            - Path=/api/admin/stats
+          filters:
+            - RewritePath=/api/admin/stats, /analytics/admin/stats
+
+        # Admin orders list (commerce-service)
+        - id: admin-orders
+          uri: ${COMMERCE_SERVICE_URL:http://localhost:8083}
+          predicates:
+            - Path=/api/admin/orders/**
+          filters:
+            - RewritePath=/api/admin/orders(?<seg>.*), /commerce/orders/admin${seg}
+
+        # Admin deliveries (delivery-service)
+        - id: admin-deliveries
+          uri: ${DELIVERY_SERVICE_URL:http://localhost:3006}
+          predicates:
+            - Path=/api/admin/deliveries/**
+          filters:
+            - RewritePath=/api/admin/deliveries(?<seg>.*), /deliveries/admin${seg}
+
+        # Admin partners (partner-service)
+        - id: admin-partners
+          uri: ${PARTNER_SERVICE_URL:http://localhost:3005}
+          predicates:
+            - Path=/api/admin/partners/**
+          filters:
+            - RewritePath=/api/admin/partners(?<seg>.*), /partner/admin${seg}
+
+        # Admin users (auth-service)
+        - id: admin-users
+          uri: ${AUTH_SERVICE_URL:http://localhost:8081}
+          predicates:
+            - Path=/api/admin/users/**
+          filters:
+            - RewritePath=/api/admin/users(?<seg>.*), /auth/admin/users${seg}
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      auth-cb:
+        registerHealthIndicator: true
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        permittedNumberOfCallsInHalfOpenState: 3
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+        waitDurationInOpenState: 5s
+        failureRateThreshold: 50
+      catalog-cb:
+        slidingWindowSize: 10
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10s
+      commerce-cb:
+        slidingWindowSize: 10
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10s
+      reading-cb:
+        slidingWindowSize: 10
+        failureRateThreshold: 50
+        waitDurationInOpenState: 5s
+      partner-cb:
+        slidingWindowSize: 10
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,gateway
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:changeme-use-a-strong-secret-in-production-min-32-chars}
+
+logging:
+  level:
+    org.springframework.cloud.gateway: INFO
+    reactor.netty: INFO
+    mz.ebooks.gateway: DEBUG
