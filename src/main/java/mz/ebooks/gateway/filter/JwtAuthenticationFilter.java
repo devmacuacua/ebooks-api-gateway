@@ -61,7 +61,8 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
     /** Paths that are public only for GET requests. */
     private static final List<String> GET_ONLY_OPEN_PREFIXES = List.of(
             "/api/catalog/books",
-            "/api/media"
+            "/api/media",
+            "/api/partner/widget/"
     );
 
     private final ReactiveStringRedisTemplate redisTemplate;
