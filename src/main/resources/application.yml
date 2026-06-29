@@ -26,25 +26,35 @@ spring:
             redis-rate-limiter.requestedTokens: 1
         - DedupeResponseHeader=Access-Control-Allow-Credentials Access-Control-Allow-Origin
       routes:
-        # Auth Service
+        # Auth Service — stricter rate limit to blunt brute-force attacks
         - id: auth-service
           uri: ${AUTH_SERVICE_URL:http://localhost:8081}
           predicates:
             - Path=/api/auth/**
           filters:
             - StripPrefix=1
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 5
+                redis-rate-limiter.burstCapacity: 10
+                redis-rate-limiter.requestedTokens: 1
             - name: CircuitBreaker
               args:
                 name: auth-cb
                 fallbackUri: forward:/fallback/auth
 
-        # Catalog Service
+        # Catalog Service — public reads need a higher ceiling
         - id: catalog-service
           uri: ${CATALOG_SERVICE_URL:http://localhost:8082}
           predicates:
             - Path=/api/catalog/**
           filters:
             - StripPrefix=2
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 50
+                redis-rate-limiter.burstCapacity: 100
+                redis-rate-limiter.requestedTokens: 1
             - name: CircuitBreaker
               args:
                 name: catalog-cb
@@ -62,13 +72,18 @@ spring:
                 name: commerce-cb
                 fallbackUri: forward:/fallback/commerce
 
-        # Reading/DRM Service
+        # Reading/DRM Service — reader fetches pages rapidly; raise the ceiling
         - id: reading-service
           uri: ${READING_SERVICE_URL:http://localhost:3001}
           predicates:
             - Path=/api/reading/**
           filters:
             - StripPrefix=1
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 60
+                redis-rate-limiter.burstCapacity: 120
+                redis-rate-limiter.requestedTokens: 1
             - name: CircuitBreaker
               args:
                 name: reading-cb
@@ -190,6 +205,14 @@ spring:
             - Path=/api/admin/users/**
           filters:
             - RewritePath=/api/admin/users(?<seg>.*), /auth/admin/users${seg}
+
+        # Admin platform settings (analytics-service)
+        - id: admin-settings
+          uri: ${ANALYTICS_SERVICE_URL:http://localhost:3007}
+          predicates:
+            - Path=/api/admin/settings/**
+          filters:
+            - RewritePath=/api/admin/settings(?<seg>.*), /analytics/admin/settings${seg}
 
 resilience4j:
   circuitbreaker:
