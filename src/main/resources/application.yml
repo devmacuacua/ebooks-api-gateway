@@ -129,6 +129,14 @@ spring:
           filters:
             - StripPrefix=1
 
+        # Partner book submissions (catalog-service) — must precede the generic partner route
+        - id: partner-book-submissions
+          uri: ${CATALOG_SERVICE_URL:http://localhost:8082}
+          predicates:
+            - Path=/api/partner/books/submissions, /api/partner/books/submissions/**
+          filters:
+            - RewritePath=/api/partner/books/submissions(?<seg>.*), /books/partner-submissions${seg}
+
         # Partner Service (management — requires auth)
         - id: partner-service
           uri: ${PARTNER_SERVICE_URL:http://localhost:3005}
